@@ -17,6 +17,7 @@ Pipeline steps:
 """
 
 import os
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -44,13 +45,13 @@ CCM = np.array([
 # --------------------------------------------------------------------- #
 
 
-def wavelength_to_index(wavelength):
+def wavelength_to_index(wavelength: np.ndarray) -> np.ndarray:
     """Convert a wavelength (nm) to the band index of the loaded cube.
     Assumes the cube starts at 400nm with 10nm steps between bands."""
     return ((wavelength - 400) / 10).astype(np.int64)
 
 
-def load_multispectral_cube(folder_path):
+def load_multispectral_cube(folder_path: str) -> np.ndarray:
     """Load all band images from a folder and stack them into a
     Height x Width x Bands cube."""
     files = sorted(os.listdir(folder_path))
@@ -68,7 +69,7 @@ def load_multispectral_cube(folder_path):
     return np.stack(bands, axis=-1)
 
 
-def load_qe_curve(file_path, target_wavelengths):
+def load_qe_curve(file_path: str, target_wavelengths: np.ndarray) -> np.ndarray:
     """Load a camera spectral response (QE) curve from Excel and
     interpolate it to the wavelengths we need."""
     df = pd.read_excel(file_path)
@@ -77,7 +78,9 @@ def load_qe_curve(file_path, target_wavelengths):
     return np.interp(target_wavelengths, wavelengths, qe_values)
 
 
-def compute_channel_intensity(ms_image, wavelengths, qe_curve):
+def compute_channel_intensity(
+    ms_image: np.ndarray, wavelengths: np.ndarray, qe_curve: np.ndarray
+) -> np.ndarray:
     """Compute the simulated sensor intensity for one color channel by
     combining the scene reflectance with the sensor's spectral response."""
     indices = wavelength_to_index(wavelengths)
@@ -86,7 +89,9 @@ def compute_channel_intensity(ms_image, wavelengths, qe_curve):
     return intensity
 
 
-def build_bayer_raw(I_R, I_G, I_B, size):
+def build_bayer_raw(
+    I_R: np.ndarray, I_G: np.ndarray, I_B: np.ndarray, size: int
+) -> np.ndarray:
     """Arrange R, G, B intensity images into a single RGGB Bayer RAW image,
     the same way a real camera sensor only sees one color per pixel."""
     bayer = np.zeros((size, size), dtype=np.float32)
@@ -99,7 +104,7 @@ def build_bayer_raw(I_R, I_G, I_B, size):
     return bayer_norm
 
 
-def demosaic(bayer_raw, method="bilinear"):
+def demosaic(bayer_raw: np.ndarray, method: str = "bilinear") -> np.ndarray:
     """Reconstruct a full RGB image from the Bayer RAW image.
     method: 'bilinear' (fast, simple) or 'edge_aware' (sharper, slower)."""
     if method == "bilinear":
@@ -110,7 +115,7 @@ def demosaic(bayer_raw, method="bilinear"):
         raise ValueError("method must be 'bilinear' or 'edge_aware'")
 
 
-def white_balance(image):
+def white_balance(image: np.ndarray) -> np.ndarray:
     """Simple gray-world white balance: makes the average R, G and B
     roughly equal, so the image doesn't look too red/blue overall."""
     mean_b = np.mean(image[:, :, 0])
@@ -123,14 +128,14 @@ def white_balance(image):
     return balanced
 
 
-def apply_ccm(image, ccm):
+def apply_ccm(image: np.ndarray, ccm: np.ndarray) -> np.ndarray:
     """Apply the color correction matrix to every pixel."""
     h, w, _ = image.shape
     out = image.reshape(-1, 3) @ ccm.T
     return out.reshape(h, w, 3)
 
 
-def gamma_correct(image, gamma):
+def gamma_correct(image: np.ndarray, gamma: float) -> np.ndarray:
     """Apply gamma correction and convert the image to 8-bit for saving."""
     img = np.clip(image, 0, None)
     img = img / np.max(img)
@@ -138,14 +143,16 @@ def gamma_correct(image, gamma):
     return (img * 255).astype(np.uint8)
 
 
-def process_to_final_image(demosaiced, ccm, gamma):
+def process_to_final_image(
+    demosaiced: np.ndarray, ccm: np.ndarray, gamma: float
+) -> np.ndarray:
     """Run white balance, color correction and gamma correction in order."""
     balanced = white_balance(demosaiced)
     corrected = apply_ccm(balanced, ccm)
     return gamma_correct(corrected, gamma)
 
 
-def main():
+def main() -> None:
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     # 1. Load the multispectral image cube
